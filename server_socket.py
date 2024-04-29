@@ -21,9 +21,10 @@ class ServerSocket:
     def accept(self):
         client_socket,address=self.socket.accept()
         print(f'A client socket, from {address}, connect to server...')
-        ID=self.allocate()
-        self.clients_dict[ID]=client_socket
-        self.address_dict[address]=ID
+        if not self.address_dict[address]:
+            ID=self.allocate()
+            self.clients_dict[ID]=client_socket
+            self.address_dict[address]=ID
     #id2333听令！
     def allocate(self)->str:
         ID=self.current_give_id
@@ -50,7 +51,7 @@ class ServerSocket:
                     case Config.MessageType.detection:
                         match DICTIONARY['instruction']:
                             case Config.Instruction.detect:
-                                match DICTIONARY['sender']:
+                                match DICTIONARY['addressee']:
                                     case Config.serverId:#交换了addressee和sender
                                         self.send(DICTIONARY['type'],DICTIONARY['instruction'],DICTIONARY['addressee'],DICTIONARY['sender'])
                     case Config.MessageType.inquire:
@@ -59,10 +60,10 @@ class ServerSocket:
                                 self.send(DICTIONARY['type'],DICTIONARY['instruction'],DICTIONARY['sender'],DICTIONARY['addressee'])
                                 del self.clients_dict[DICTIONARY['sender']]
                             case Config.Instruction.please:
-                                match DICTIONARY['sender']:
+                                match DICTIONARY['addressee']:
                                     case Config.serverId:#真麻烦
                                         self.send(Config.MessageType.respond,Config.Instruction.id,Config.serverId,DICTIONARY['sender'],self.address_dict[DICTIONARY['sender']])
                             case Config.Instruction.call:
-                                match DICTIONARY['sender']:
+                                match DICTIONARY['addressee']:
                                     case Config.serverId:#这就方便了
                                         self.send(Config.MessageType.respond,Config.Instruction.known,Config.serverId,DICTIONARY['sender'])
