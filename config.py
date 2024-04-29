@@ -1,0 +1,50 @@
+#引入这个configparser模块
+#什么？你问为什么？不这样怎么读取ini配置文件？
+import configparser
+#好的，我们来创建一个configParse对象
+CONFIG=configparser.ConfigParser()
+#然后告诉它：我要读取config.ini配置文件！
+#它就读取了，就是这样
+CONFIG.read('config.ini')
+#然后我们又创建了一个Config类，方便使用
+class Config:
+    #什么？为什么都是类属性？
+    #什么？为什么不用构造函数？
+    #哪有什么为什么？因为方便【摆烂...】
+    #召唤服务器ip地址！
+    serverHost=CONFIG.get('SERVER','host')
+    #召唤被监听的端口号！
+    usingPort=CONFIG.getint('SERVER','port')
+    #召唤服务器id！
+    serverId=CONFIG.get('SERVER','id')
+    #心跳检测等待时间！
+    heartbeatRate=CONFIG.getint('CLIENT','heartbeat_rate')
+    #重连最大尝试次数
+    maximumAttemptLimit=CONFIG.getint('CLIENT','maximun_attempt_limit')
+    #最多可以读取的文字量
+    maximumTextLimit=CONFIG.getint('TEXT','maximum_text_limit')
+    #创建一个指令集
+    #什么？问我为什么又定义了一个类？
+    #还问我为什么这个类在上面这个类里面？
+    #哦~这叫内部类
+    #没了
+    class Instruction:
+        #看过config.ini文件的不用我多介绍了吧【摆烂...】
+        #什么？没看过？没看过怎么还不去看？
+        text=CONFIG.get('INSTRUCTIONS','send_text')
+        file=CONFIG.get('INSTRUCTIONS','send_file')
+        error=CONFIG.get('INSTRUCTIONS','send_error')
+        bye=CONFIG.get('INSTRUCTIONS','end_communication')
+        please=CONFIG.get('INSTRUCTIONS','request_to_join')
+        id=CONFIG.get('INSTRUCTIONS','allocation_id')
+        call=CONFIG.get('INSTRUCTIONS','request_reconnection')
+        known=CONFIG.get('INSTRUCTIONS','successfull_reconnection')
+        detect=CONFIG.get('INSTRUCTIONS','heartbeat_detection')
+    #消息类型
+    #啊吧啊吧...【痴呆...】
+    class MessageType:
+        transmit=CONFIG.get('MESSAGE_TYPES','transmit')
+        detection=CONFIG.get('MESSAGE_TYPES','detection')
+        inquire=CONFIG.get('MESSAGE_TYPES','inquire')
+        respond=CONFIG.get('MESSAGE_TYPES','respond')
+        report=CONFIG.get('MESSAGE_TYPES','report')
