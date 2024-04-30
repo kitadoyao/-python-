@@ -1,69 +1,145 @@
-#累死了，注释真难写
-#和client_socket.py差不多啦，重复的我不会再提
 import socket
-from config import Config
+from config import Config,Instruction,MessageType,Error
 from message import Message
 class ServerSocket:
     def __init__(self):
         self._init_socket()
-        self.current_give_id=1#开始编号id1
-        self.clients_dict={}
+        self.current_give_id=1
+        self.clients_dict:dict[str,socket.socket]={}
         self.address_dict={}
         self.running=True
     def _init_socket(self):
         self.socket=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        self.socket.bind((Config.serverHost,Config.usingPort))#和客户端不一样的地方，就在于它是监听不是连接
-        self.socket.listen()#一看就懂，我不说了
+        self.socket.bind((Config.host,Config.port))
+        self.socket.listen()
     def stop(self):
         self.running=False
         self.socket.close()
-    #我们接收，我们编号，我们存储
     def accept(self):
-        client_socket,address=self.socket.accept()
-        print(f'A client socket, from {address}, connect to server...')
-        if not self.address_dict[address]:
-            ID=self.allocate()
-            self.clients_dict[ID]=client_socket
-            self.address_dict[address]=ID
-    #id2333听令！
+        try:
+            client_socket,address=self.socket.accept()
+            print(f'A client socket, from {address}, connect to server...')
+            if address not in self.address_dict:
+                id=self.allocate()
+                self.clients_dict[id]=client_socket
+                self.address_dict[address]=id
+        except socket.error as error:
+            print(f'Error accepting client connection:{error}')
     def allocate(self)->str:
-        ID=self.current_give_id
+        id=self.current_give_id
         self.current_give_id+=1
-        return 'id'+str(ID)
-    #发送，啊，对，是的，没错，和客户端的逻辑是一样的，就多了个找人的代码
-    def send(self,type,instruction,sender,addressee,content=''):
-        MESSAGE=Message.dumps(type,instruction,sender,addressee,content)
-        #说的就是你，找人的代码！
-        for id in self.clients_dict.keys():
-            if addressee==id:
-                TARGET_SOCKET:socket.socket=self.clients_dict[id]
-        TARGET_SOCKET.sendall(MESSAGE)
+        return 'id'+str(id)
     def receive(self):
-        MESSAGE=self.socket.recv(Config.maximumTextLimit).decode()
-        self.handle_receive(MESSAGE) if Message.is_message(MESSAGE) else None
-    def handle_receive(self,message):
-        if message is not None:
-            DICTIONARY=Message.loads(message)
-            if type(DICTIONARY)==dict:
-                match DICTIONARY['type']:
-                    case Config.MessageType.transmit:#哈哈哈！偷懒而已，既然有现成的，为什么还要自己一个一个Config.出来！
-                        self.send(DICTIONARY['type'],DICTIONARY['instruction'],DICTIONARY['sender'],DICTIONARY['addressee'],DICTIONARY['content'])
-                    case Config.MessageType.detection:
-                        match DICTIONARY['instruction']:
-                            case Config.Instruction.detect:
-                                match DICTIONARY['addressee']:
-                                    case Config.serverId:#交换了addressee和sender
-                                        self.send(DICTIONARY['type'],DICTIONARY['instruction'],DICTIONARY['addressee'],DICTIONARY['sender'])
-                    case Config.MessageType.inquire:
-                        match DICTIONARY['instruction']:
-                            case Config.Instruction.bye:#一模一样，不要看了
-                                self.send(DICTIONARY['type'],DICTIONARY['instruction'],DICTIONARY['sender'],DICTIONARY['addressee'])
-                                del self.clients_dict[DICTIONARY['sender']]
-                            case Config.Instruction.please:
-                                match DICTIONARY['addressee']:
-                                    case Config.serverId:#真麻烦
-                                        self.send(Config.MessageType.respond,Config.Instruction.id,Config.serverId,DICTIONARY['sender'],self.address_dict[DICTIONARY['sender']])
-                            case Config.Instruction.call:
-                                match DICTIONARY['addressee']:
-                                    case Config.serverId:#这就方便了
-                                        self.send(Config.MessageType.respond,Config.Instruction.known,Config.serverId,DICTIONARY['sender'])
+        try:
+            message=self.socket.recv(Config.maximum_text_limit)
+            self.handle(Message.loads(message)) if Message.is_message(message) else None
+        except socket.error as error:
+            print(f'Error receiving message:{error}')
+    def error_report(self,addressee,error_type):
+        self.send(Message.dump(
+            MessageType.report,
+            Instruction.error,
+            Config.server_id,
+            addressee,
+            error_type
+        ))
+    def heartbeat_detection(self,addressee):
+        self.send(Message.dump(
+            MessageType.detection,
+            Instruction.detect,
+            addressee,
+            Config.server_id,
+            ''
+        ))
+    def send_respond(self,instruction,addressee):
+        self.send(Message.dump(
+            MessageType.respond,
+            instruction,
+            Config.server_id,
+            addressee,
+            ''
+        ))
+    def handle(self,dictionary):
+        if dictionary is not None and type(dictionary)==dict:
+            match dictionary['type']:
+                case MessageType.transmit:
+                    match dictionary['instruction']:
+                        case instruction if instruction in {
+                            Instruction.text,
+                            Instruction.file
+                        }:
+                            self.send(Message.dumps(dictionary))
+                        case instruction if instruction in Instruction.difference({
+                            Instruction.text,
+                            Instruction.file
+                        }):
+                            self.error_report(dictionary['sender'],Error.WrongInstruction)
+                        case _:
+                            self.error_report(dictionary['sender'],Error.InstructionNotExist)
+                case MessageType.detection:
+                    match dictionary['instruction']:
+                        case Instruction.detect:
+                            match dictionary['addressee']:
+                                case Config.server_id:
+                                    self.heartbeat_detection(dictionary['sender'])
+                                case _:
+                                    self.error_report(dictionary['sender'],Error.WrongAddressee)
+                        case instruction if instruction in Instruction.difference({
+                            Instruction.detect
+                        }):
+                            self.error_report(dictionary['sender'],Error.WrongInstruction)
+                        case _:
+                            self.error_report(dictionary['sender'],Error.InstructionNotExist)
+                case MessageType.inquire:
+                    match dictionary['instruction']:
+                        case Instruction.bye:
+                            self.send(Message.dumps(dictionary))
+                        case Instruction.please:
+                            self.send_respond(Instruction.id,dictionary['sender'])
+                        case Instruction.call:
+                            self.send_respond(Instruction.known,dictionary['sender'])
+                        case instruction if instruction in Instruction.difference({
+                            Instruction.bye,
+                            Instruction.please,
+                            Instruction.call
+                        }):
+                            self.error_report(dictionary['sender'],Error.WrongInstruction)
+                        case _:
+                            self.error_report(dictionary['sender'],Error.InstructionNotExist)
+                case MessageType.respond:
+                    self.error_report(dictionary['sender'],Error.WrongMessageType)
+                case MessageType.report:
+                    match dictionary['instruction']:
+                        case Instruction.error:
+                            match dictionary['addressee']:
+                                case Config.server_id:
+                                    self.error_report(dictionary['sender'],Error.WrongAddressee)
+                                case _:
+                                    self.send(Message.dumps(dictionary))
+                        case instruction if instruction in Instruction.difference({
+                            Instruction.error
+                        }):
+                            self.error_report(dictionary['sender'],Error.WrongInstruction)
+                        case _:
+                            self.error_report(dictionary['sender'],Error.InstructionNotExist)
+                case _:
+                    self.error_report(dictionary['sender'],Error.MessageTypeNotExist)
+    def send(self,message):
+        dictionary=Message.loads(message)
+        if dictionary is not None and type(dictionary)==dict:
+            try:
+                if dictionary['instruction']==Config.all_members_id:
+                    for id in self.clients_dict.keys():
+                        SOCKET:socket.socket=self.clients_dict[id]
+                        SOCKET.sendall(message)
+                else:
+                    for id in self.clients_dict.keys():
+                        self.clients_dict[id].sendall(message)
+            except socket.error as error:
+                print(f'Error sending message to client {dictionary['addressee']}:{error}')
+                del self.clients_dict[dictionary['addressee']]
+                try:
+                    self.error_report(dictionary['sender'],Error.AddresseeNotExist)
+                except socket.error as error:
+                    print(f'Error sending message to client {dictionary['sender']}:{error}')
+                    del self.clients_dict[dictionary['sender']]
