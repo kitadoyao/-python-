@@ -128,8 +128,10 @@ class ServerSocket:
         dictionary=Message.loads(message)
         if dictionary is not None and type(dictionary)==dict:
             try:
-                if dictionary['instruction']==Config.all_members_id:
+                if dictionary['instruction']==Config.broadcast_id:
                     for id in self.clients_dict.keys():
+                        if id==dictionary['sender']:
+                            continue
                         SOCKET:socket.socket=self.clients_dict[id]
                         SOCKET.sendall(message)
                 else:
