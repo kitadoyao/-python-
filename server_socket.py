@@ -95,9 +95,17 @@ class ServerSocket:
                         case Instruction.bye:
                             self.send(Message.dumps(dictionary))
                         case Instruction.please:
-                            self.send_respond(Instruction.id,dictionary['sender'])
+                            match dictionary['addressee']:
+                                case Config.server_id:
+                                    self.send_respond(Instruction.id,dictionary['sender'])
+                                case _:
+                                    self.error_report(dictionary['sender'],Error.WrongAddressee)
                         case Instruction.call:
-                            self.send_respond(Instruction.known,dictionary['sender'])
+                            match dictionary['addressee']:
+                                case Config.server_id:
+                                    self.send_respond(Instruction.known,dictionary['sender'])
+                                case _:
+                                    self.error_report(dictionary['sender'],Error.WrongAddressee)
                         case instruction if instruction in Instruction.difference({
                             Instruction.bye,
                             Instruction.please,
