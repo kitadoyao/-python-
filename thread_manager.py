@@ -7,9 +7,11 @@ class ThreadManager:
             if not self.socket.running:
                 break
             callback()
-    def start_thread(self,*callbacks):
+    def start_threads(self,*callbacks):
         try:
             for callback in callbacks:
-                threading.Thread(target=self.loop,args=(self,callback)).start()
+                threading.Thread(target=self.loop,args=(callback,)).start()
         except Exception as error:
             print(f'An error occurs:{error}')
+    def stop_threads(self):
+        self.socket.running=False
