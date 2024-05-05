@@ -1,0 +1,42 @@
+{
+    "server":{
+        "host":"192.168.0.102",
+        "port":6363,
+        "server_id":"Server"
+    },
+    "client":{
+       "broadcast_id":"Broadcast",
+       "heartbeat_rate":10,
+       "maximum_attempt_limit":3,
+       "wait_attempt_rate":5
+    },
+    "instruction":{
+        "send_text":"/text:",
+        "send_file":"/file",
+        "send_error":"/error",
+        "end_communication":"/bye",
+        "request_to_join":"/join",
+        "allocation_id":"/id",
+        "request_reconnection":"/call",
+        "successfull_reconnection":"/known",
+        "heartbeat_detection":"/detect"
+    },
+    "message_type":{
+        "transmit":"transmit",
+        "detection":"detection",
+        "inquire":"inquire",
+        "respond":"respond",
+        "report":"report"
+    },
+    "error":{
+        "AddresseeNotExist":"an addressee that not exist",
+        "InstructionNotExist":"an instruction that not exist",
+        "MessageTypeNotExist":"a message type that not exist",
+        "WrongAddressee":"a wrong addressee",
+        "WrongInstruction":"a wrong instruction",
+        "WrongMessageType":"a wrong message type"
+    },
+    "text":{
+        "maximum_text_limit":4096
+    }
+}
