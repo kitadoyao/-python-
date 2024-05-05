@@ -1,48 +1,57 @@
-import configparser
-CONFIG=configparser.ConfigParser()
-CONFIG.read('config.ini')
+from config_manager import ConfigManager
 class Config:
-    host=CONFIG.get('SERVER','host')
-    port=CONFIG.getint('SERVER','port')
-    server_id=CONFIG.get('SERVER','id')
-    broadcast_id=CONFIG.get('CLIENT','all_members_id')
-    heartbeat_rate=CONFIG.getint('CLIENT','heartbeat_rate')
-    wait_attempt_rate=CONFIG.getint('CLIENT','wait_attempt_rate')
-    maximum_attempt_limit=CONFIG.getint('CLIENT','maximum_attempt_limit')
-    maximum_text_limit=CONFIG.getint('TEXT','maximum_text_limit')
+    def __init__(self):
+        self.host=ConfigManager.get('server','host')
+        self.port=int(ConfigManager.get('server','port'))
+        self.server_id=ConfigManager.get('server','server_id')
+        self.broadcast_id=ConfigManager.get('client','broadcast_id')
+        self.heartbeat_rate=int(ConfigManager.get('client','heartbeat_rate'))
+        self.wait_attempt_rate=int(ConfigManager.get('client','wait_attempt_rate'))
+        self.maximum_attempt_limit=int(ConfigManager.get('client','maximum_attempt_limit'))
+        self.maximum_text_limit=int(ConfigManager.get('text','maximum_text_limit'))
+        self.message_type=MessageType()
+        self.instruction=Instruction()
+        self.error=Error()
 class MessageType:
-        transmit=CONFIG.get('MESSAGE_TYPES','transmit')
-        detection=CONFIG.get('MESSAGE_TYPES','detection')
-        inquire=CONFIG.get('MESSAGE_TYPES','inquire')
-        respond=CONFIG.get('MESSAGE_TYPES','respond')
-        report=CONFIG.get('MESSAGE_TYPES','report')
+    def __init__(self):
+        self.transmit=ConfigManager.get('message_type','transmit')
+        self.detection=ConfigManager.get('message_type','detection')
+        self.inquire=ConfigManager.get('message_type','inquire')
+        self.respond=ConfigManager.get('message_type','respond')
+        self.report=ConfigManager.get('message_type','report')
 class Instruction:
-        text=CONFIG.get('INSTRUCTIONS','send_text')
-        file=CONFIG.get('INSTRUCTIONS','send_file')
-        error=CONFIG.get('INSTRUCTIONS','send_error')
-        bye=CONFIG.get('INSTRUCTIONS','end_communication')
-        please=CONFIG.get('INSTRUCTIONS','request_to_join')
-        id=CONFIG.get('INSTRUCTIONS','allocation_id')
-        call=CONFIG.get('INSTRUCTIONS','request_reconnection')
-        known=CONFIG.get('INSTRUCTIONS','successfull_reconnection')
-        detect=CONFIG.get('INSTRUCTIONS','heartbeat_detection')
-        @staticmethod
-        def difference(A:set):
-            B={
-                Instruction.text,
-                Instruction.file,
-                Instruction.error,
-                Instruction.bye,
-                Instruction.please,
-                Instruction.id,
-                Instruction.call,
-                Instruction.known,
-                Instruction.detect
-            }
-            C:set=B.difference(A)
-            return C
+    def __init__(self):
+        self.text=ConfigManager.get('instruction','send_text')
+        self.file=ConfigManager.get('instruction','send_file')
+        self.error=ConfigManager.get('instruction','send_error')
+        self.bye=ConfigManager.get('instruction','end_communication')
+        self.join=ConfigManager.get('instruction','request_to_join')
+        self.id=ConfigManager.get('instruction','allocation_id')
+        self.call=ConfigManager.get('instruction','request_reconnection')
+        self.known=ConfigManager.get('instruction','successfull_reconnection')
+        self.detect=ConfigManager.get('instruction','heartbeat_detection')
+    def difference(self,A:set):
+        B={
+            self.text,
+            self.file,
+            self.error,
+            self.bye,
+            self.join,
+            self.id,
+            self.call,
+            self.known,
+            self.detect
+        }
+        C:set=B.difference(A)
+        return C
 class Error:
-        AddresseeNotExist=CONFIG.get('ERROR','AddresseeNotExist')
+    def __init__(self):
+        self.AddresseeNotExist=ConfigManager.get('error','AddresseeNotExist')
+        self.InstructionNotExist=ConfigManager.get('error','InstructionNotExist')
+        self.MessageTypeNotExist=ConfigManager.get('error','MessageTypeNotExist')
+        self.WrongAddressee=ConfigManager.get('error','WrongAddressee')
+        self.WrongInstruction=ConfigManager.get('error','WrongInstruction')
+        self.WrongMessageType=ConfigManager.get('error','WrongMessageType')
         InstructionNotExist=CONFIG.get('ERROR','InstructionNotExist')
         MessageTypeNotExist=CONFIG.get('ERROR','MessageTypeNotExist')
         WrongAddressee=CONFIG.get('ERROR','WrongAddressee')
