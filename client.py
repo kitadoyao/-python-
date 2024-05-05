@@ -4,4 +4,4 @@ class Client:
     def __init__(self):
         self.socket=ClientSocket()
         self.thread=ThreadManager(self.socket)
-        self.thread.start_thread(self.socket.send,self.socket.receive,self.socket.heartbeat)
+        self.thread.start_threads(self.socket.send,self.socket.receive,self.socket.heartbeat)
