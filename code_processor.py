@@ -1,496 +1,410 @@
-from abc import ABC, abstractmethod
 import re
+from typing import List, Dict, Tuple
+from dataclasses import dataclass
 
-class CodeProcessor:
-    def __init__(self):
-        self.factory = StatementFactory()
-        self.validator_chain = CodeBeginValidator(CodeBlockValidator(CodeInBlockStatementValidator(CodeFunctionScopeValidator(CodeCallFunctionMatchValidator(CodeNamingCheckValidator(CodeValueCheckValidator(CodeTypeCheckValidator(CodeEndValidator(None)))))))))
-        self.optimizers = [CodeUnusedOptimizer(),CodeRepeatDefinedOptimizer(),CodeUnreachableOptimizer()]
-        self.organizer = CodeOrganizer()
-        self.executor = CodeExecutor()
-        self.closed_block_match = {}
-        self.reverse_closed_block_match = {}
-        self.in_block_keywords = {}
-        self.function_scope = {}
-        self.call_function_match = {}
-        self.call_stack = {}
-        self.body = []
-        self.index = 0
-    def validator_notify(self,message):
-        return self.validator_chain.update(self, message)
-    def optimizer_notify(self, message):
-        for optimizer in self.optimizers:
-            optimizer.update(self, message)
-        self.organizer.update(self, message)
-    def append_code(self, statement_type, *args, **kwargs):
-        statement = self.factory.create_statement(statement_type, *args, **kwargs)
-        self.body.append(statement)
-        statement.mkindex(self.index)
-        self.index += 1
-    def execute(self):
-        self.invalid = [False] * self.index
-        signal, response = self.validator_notify("Start Checking")
-        if signal == "stop":
-            print(response)
-        self.optimizer_notify("Start Optimizing")
-        self.executor.execute(self)
+@dataclass
+class Token:
+    type: str
+    value: str
 
-class Statement(ABC):
-    def __init__(self):
-        self.index = None
-    def mkindex(self, index):
-        self.index=index
+    def __repr__(self) -> str:
+        return f'Token<{self.type}, {self.value}>'
 
-class StatementFactory:
-    def create_statement(self, statement_type, *args, **kwargs):
-        statement_classes = {"define":Definition, "operate":Operation, "if":If, "elif":Elif, "else":Else, "condition-end":ConditionEnd, "switch":Switch, "case":Case, "default":Default, "switch-end":SwitchEnd, "for":For, "while":While, "loop-end":LoopEnd, "continue":Continue, "break":Break, "function":Function, "call":Call, "return":Return, "function-end":FunctionEnd, "try":Try, "throw":Throw, "catch":Catch, "exception-end":ExceptionEnd, "print":Print, "scan":Scan}
-        if statement_type not in statement_classes:
-            raise ValueError("Error: Undefined statement type")
-        return statement_classes[statement_type](*args, **kwargs)
+class Lexer:
+    def __init__(self) -> None:
+        self.token_regex_patterns: List[Tuple[str, str]] = [
+            ('whitespace', r'\s+'),
+            ('single_line_comment', r'//.*'),
+            ('multi_line_comment', r'/\*.*?\*/'),
+            ('+', r'\+(?![=\+])'), # arithmetic_operator
+            ('-', r'-(?![=-])'), # arithmetic_operator
+            ('*', r'\*(?![=\*])'), # arithmetic_operator
+            ('/', r'/(?!=)'), # arithmetic_operator
+            ('%', r'%(?!=)'), # arithmetic_operator
+            ('**', r'\*\*'), # arithmetic_operator
+            ('++', r'\+\+'), # arithmetic_operator
+            ('--', r'--'), # arithmetic_operator
+            ('>', r'>(?!(=|>{1,2}))'), # comparison_operator
+            ('<', r'<(?![=<])'), # comparison_operator
+            ('>=', r'>='), # comparison_operator
+            ('<=', r'<='), # comparison_operator
+            ('==', r'==(?!=)'), # comparison_operator
+            ('===', r'==='), # comparison_operator
+            ('!=', r'!=(?!=)'), # comparison_operator
+            ('!==', r'!=='), # comparison_operator
+            ('&&', r'&&(?!=)'), # logical_operator
+            ('||', r'\|\|(?!=)'), # logical_operator
+            ('!', r'!(?!={1,2})'), # logical_operator
+            ('??', r'\?\?(?!=)'), # null_coalescing_operator
+            ('?.', r'\?\.'), # null_conditional_operator
+            ('&', r'&(?=&={0,1})'), # bitwise_operator
+            ('|', r'\|(?=\|={0,1})'), # bitwise_operator
+            ('^', r'\^'), # bitwise_operator
+            ('~', r'~'), # bitwise_operator
+            ('<<', r'<<'), # bitwise_operator
+            ('>>', r'>>(?!>)'), # bitwise_operator
+            ('>>>', r'>>>'), # bitwise_operator
+            ('?', r'\?(?!(\?={0,1}|\.))'), # ternary_operator
+            (':', r':'), # ternary_operator
+            ('=', r'=(?!(={1,2}|>))'), # assignment_operator
+            ('+=', r'\+='), # assignment_operator
+            ('-=', r'-='), # assignment_operator
+            ('*=', r'\*='), # assignment_operator
+            ('/=', r'/='), # assignment_operator
+            ('%=', r'%='), # assignment_operator
+            ('**=', r'\*\*='), # assignment_operator
+            ('&&=', r'&&='), # assignment_operator
+            ('||=', r'\|\|='), # assignment_operator
+            ('??=', r'\?\?='), # assignment_operator
+            (',', r','), # comma_operator
+            ('=>', r'=>'), # arrow_function_operator
+            ('Number', r'((-?(0(\.\d+|[eE][+-]?\d+)|[1-9]\d*(\.\d+|[eE][+-]?\d+)?)|0)'),
+            ('String', r'(\'|"|`)([^\1\\]*(\\.[^\1\\]*)*)\1$'),
+            ('Boolean', r'true|false'),
+            ('Undefined', r'undefined'),
+            ('Null', r'null'),
+            ('NaN', r'NaN'),
+            ('(', r'\('),
+            (')', r'\)'),
+            ('[', r'\['),
+            (']', r'\]'),
+            ('{', r'\{'),
+            ('}', r'\}'),
+            ('break', r'break(?!\w)'),
+            ('case', r'case(?!\w)'),
+            ('continue', r'continue(?!\w)'),
+            ('default', r'default(?!\w)'),
+            ('do', r'do(?!\w)'),
+            ('if', r'if(?!\w)'),
+            ('else', r'else(?!\w)'),
+            ('for', r'for(?!\w)'),
+            ('in', r'in(?!\w)'),
+            ('of', r'of(?!\w)'),
+            ('let', r'let(?!\w)'),
+            ('return', r'return(?!\w)'),
+            ('switch', r'switch(?!\w)'),
+            ('var', r'var(?!\w)'),
+            ('while', r'while(?!\w)'),
+            ('function', r'function(?!\w)'),
+            ('const', r'const(?!\w)'),
+            ('identifier', r'[a-zA-Z_]\w*'),
+            
+        ]
+        self.last_token_type = None
 
-class Definition(Statement):
-    def __init__(self, variable, variable_type, value):
-        self.type = "define"
-        self.variable = variable
-        self.variable_type = variable_type
-        self.value = value
-class Operation(Statement):
-    def __init__(self, variable, variable_type, operate, *values):
-        self.type = "operate"
-        self.variable = variable
-        self.variable_type = variable_type
-        self.operate = operate
-        self.values = values
-class If(Statement):
-    def __init__(self, condition):
-        self.type = "if"
-        self.condition = condition
-class Elif(Statement):
-    def __init__(self, condition):
-        self.type = "elif"
-        self.condition = condition
-class Else(Statement):
-    def __init__(self):
-        self.type = "else"
-class ConditionEnd(Statement):
-    def __init__(self):
-        self.type = "condition-end"
-class Switch(Statement):
-    def __init__(self, variable):
-        self.type = "switch"
-        self.variable = variable
-class Case(Statement):
-    def __init__(self,variable, value):
-        self.type = "case"
-        self.variable = variable
-        self.value = value
-class Default(Statement):
-    def __init__(self):
-        self.type = "default"
-class SwitchEnd(Statement):
-    def __init__(self):
-        self.type = "switch-end"
-class For(Statement):
-    def __init__(self, operate, condition, *initial):
-        self.type = "for"
-        self.condition = condition
-        self.initial = initial
-        self.operate = operate
-        self.temp_store_list = []
-        self.non_temp_store_list = []
-        self.has_out = False
-    def temp_store(self, processor):
-        for i in self.initial:
-            if not processor.body[processor.in_block_keywords[self.index]].show_variable(i["name"]):
-                self.temp_store_list.append(i)
-                processor.body[processor.in_block_keywords[self.index]].define_variable(i["name"],i["value"])
-                continue
-            self.non_temp_store_list.append(i)
-    def recover_initial(self, processor):
-        for i in self.initial:
-            if i in self.temp_store_list:
-                processor.body[processor.in_block_keywords[self.index]].remove_variable(i["name"])
-                continue
-            processor.body[processor.in_block_keywords[self.index]].define_variable(i["name"],i["value"])
-class While(Statement):
-    def __init__(self, condition):
-        self.type = "while"
-        self.condition = condition
-class LoopEnd(Statement):
-    def __init__(self):
-        self.type = "loop-end"
-        self.loop_else = False
-    def set_loop_else(self):
-        self.loop_else = True
-class Continue(Statement):
-    def __init__(self):
-        self.type = "continue"
-class Break(Statement):
-    def __init__(self):
-        self.type = "break"
-class Function(Statement):
-    def __init__(self, function_name, return_value_type, *format_arguments):
-        self.type = "function"
-        self.function_name = function_name
-        self.return_value_type = return_value_type
-        self.format_arguments = format_arguments
-        self._local_scope = {}
-    def give_return_value_type(self):
-        return self.return_value_type
-    def give_format_arguments_data(self):
-        return self.format_arguments
-    def define_variable(self,variable,value):
-        self._local_scope[variable] = value
-    def show_variable(self, name):
-        return name in self._local_scope
-    def get_variable(self,variable):
-        return self._local_scope[variable]
-    def remove_variable(self,variable):
-        return self._local_scope.pop(variable)
-class Call(Statement):
-    def __init__(self, function_name, variable = None, *actual_arguments):
-        self.type = "call"
-        self.function_name = function_name
-        self.actual_arguments = actual_arguments
-        self.variable = variable
-        self._has_return = False
-        self._return_value = None
-    def set_has_return(self):
-        self._has_return = True
-    def get_return_value(self, return_value):
-        self._return_value = return_value
-class Return(Statement):
-    def __init__(self, return_value): 
-        self.type = "return"
-        self.return_value = return_value
-class FunctionEnd(Statement):
-    def __init__(self):
-        self.type = "function-end"
-class Try(Statement):
-    def __init__(self):
-        self.type = "try"
-class Throw(Statement):
-    def __init__(self, exception):
-        self.type = "throw"
-        self.exception = exception
-class Catch(Statement):
-    def __init__(self):
-        self.type = "catch"
-        self.exception = None
-    def set_exception(self,exception):
-        self.exception = exception
-class Finally(Statement):
-    def __init__(self):
-        self.type = "finally"
-class ExceptionEnd(Statement):
-    def __init__(self):
-        self.type = "exception-end"
-class Print(Statement):
-    def __init__(self, value):
-        self.type = "print"
-        self.value = value
-class Scan(Statement):
-    def __init__(self, variable):
-        self.type = "scan"
-        self.variable = variable
+    def tokenize(self, source_code: str) -> List[Token]:
+        token_list: List[Token] = []
+        while source_code:
+            found_match = False
+            for token_type, regex_pattern in self.token_regex_patterns:
+                match_result = re.match(regex_pattern, source_code)
+                if match_result:
+                    found_match = True
+                    token_string = match_result.group(0)
 
-class CodeValidator(ABC):
-    def __init__(self, success_validator):
-        self._success_validator = success_validator
-    @abstractmethod
-    def update(self, processor, message):
-        self.processor = processor
-        self.message = message
-    def next(self):
-        if self._success_validator:
-            return self._success_validator.update(self.processor, self.message)
-        return "continue", None
+                    if token_type not in {'whitespace', 'single_line_comment', 'multi_line_comment'}:
+                        token_list.append(Token(token_type, token_string))
 
-class CodeBeginValidator(CodeValidator):
-    def update(self, processor, message):
-        super().update(processor, message)
-        print(f"Code Begin Validator Received Update: {message}")
-        return self.next()
-
-class CodeBlockValidator(CodeValidator):
-    def update(self, processor, message):
-        super().update(processor, message)
-        print(f"Code Block Validator Received Update: {message}")
-        brace_stack = []
-        valid_past_types = {"elif":{"if", "elif"}, "else":{"if", "elif"}, "catch":{"try"}, "finally":{"catch"}, "case":{"switch"}, "default":{"case"},"condition-end":{"if", "elif", "else"}, "loop-end":{"for":"while"}, "function-end":{"function"}, "exteption-end":{"catch", "finally"}}
-        for line in processor.body:
-            if line.type in {"if", "for", "while", "switch", "function", "try"}:
-                brace_stack.append(line)
-            elif line.type in {"elif", "else", "catch", "finally", "case", "default","condition-end" , "loop-end", "function-end", "exception-end"}:
-                if len(brace_stack) == 0:
-                    return "stop", f"Error: Unmatched brace\nLine: {line.index}"
-                elif brace_stack[-1] not in valid_past_types[line.type]:
-                    return "stop", f"Error: Unmatched brace\nLine: {line.index}"
-                processor.closed_block_match[brace_stack.pop().index] = line.index
-                if line.type in {"elif", "else", "catch", "finally", "case", "default"}:
-                    brace_stack.append(line)
-        if len(brace_stack) != 0:
-            return "stop", f"Error: Unmatched brace\nLine: {brace_stack[-1].index}"
-        return self.next()
-
-class CodeInBlockStatementValidator(CodeValidator):
-    def update(self, processor, message):
-        super().update(processor, message)
-        print(f"Code In-block Statement Validator Received Update: {message}")
-        valid_types = {"continue":{"for","while"},"break":{"for", "while", "switch"},"throw":{"try"},"return":{"function"}}
-        for line in processor.body:
-            for block_line in processor.body[:line.index]:
-                if line.type in valid_types and block_line.type in valid_types[line.type] and processor.closed_block_match[block_line.index, -1] > line.index:
-                    processor.in_block_keywords[line.index] = block_line.index
+                    source_code = source_code[match_result.end():]
                     break
-            if line.index not in processor.in_block_keywords:
-                return "stop",f"Error: Invalid in-block keyword\nLine: {line.index}"
-        return self.next()
+            if not found_match:
+                raise ValueError(f"Unexpected character: {source_code[0]}")
+        return token_list
 
-class CodeFunctionScopeValidator(CodeValidator):
-    def update(self, processor, message):
-        super().update(processor, message)
-        print(f"Code Function Scope Validator Received Update: {message}")
-        in_function_scope = {}
-        for line in processor.body:
-            for function_line in processor.body[:line.index]:
-                if function_line.type == "function" and processor.closed_block_match[function_line.index] > line.index:
-                    in_function_scope[line.index] = function_line.index
-        processor.function_scope = {}
-        for key, value in processor.function_scope:
-            if value not in processor.function_scope:
-                processor.function_scope[value] = []
+
+    
+    def _unescape_string(self, value: str) -> str:
+        value = value[1:-1]
+        escape_sequences = {
+            r'\\': '\\',
+            r'\"': '"',
+            r"\'": "'",
+            r'\n': '\n',
+            r'\t': '\t',
+            r'\r': '\r',
+            r'\b': '\b',
+            r'\f': '\f',
+        }
+        def replace_escape_sequences(match):
+            return escape_sequences.get(match.group(0), match.group(0))
+        value = re.sub(r'\\[btnfr\"\'\n\t\r\b\f]', replace_escape_sequences, value)
+        return value
+
+class ASTNode:
+    def __init__(self, type: str, value: str, children: List['ASTNode'] = None) -> None:
+        self.type = type
+        self.value = value
+        self.children = children or []
+
+    def __repr__(self) -> str:
+        return f'ASTNode<{self.type}, {self.value}, {self.children}>'
+
+    def add_child(self, child: 'ASTNode') -> None:
+        self.children.append(child)
+
+    def to_dict(self) -> Dict:
+        return {
+            'type': self.type,
+            'value': self.value,
+            'children': [child.to_dict() for child in self.children]
+        }
+
+class Parser:
+    def __init__(self) -> None:
+        self.grammar_production = {
+            'program': ['statement_list'],
+            'statement_list': ['statement', 'statement_list'],
+            'statement': ['mutually_exclusive'],
+            'expression_statement': ['expression', ';'],
+            'expression': ['mutually_exclusive'],
+            'prefix_expression': ['mutually_exclusive'],
+            'increment_prefix_expression': ['++', 'numerical-valued_operated_item'],
+            'decrement_prefix_expression': ['--', 'numerical-valued_operated_item'],
+            'not_expression': ['!', 'truth-valued_operated_item'],
+            'negative_expression': ['-', 'numerical-valued_operated_item'],
+            'bitwise_not_expression': ['~', 'numerical-valued_operated_item'],
+            'postfix_expression': ['mutually_exclusive'],
+            'increment_postfix_expression': ['numerical-valued_operated_item', '++'],
+            'decrement_postfix_expression': ['numerical-valued_operated_item', '--'],
+            'binary_expression': ['mutually_exclusive'],
+            'arithmetic_expression':['mutually_exclusive'],
+            'addition_expression': ['numerical-valued_operated_item', '+', 'numerical-valued_operated_item'],
+            'subtraction_expression': ['numerical-valued_operated_item', '-', 'numerical-valued_operated_item'],
+            'multiplication_expression': ['numerical-valued_operated_item', '*', 'numerical-valued_operated_item'],
+            'division_expression': ['numerical-valued_operated_item', '/', 'numerical-valued_operated_item'],
+            'modulus_expression': ['numerical-valued_operated_item', '%', 'numerical-valued_operated_item'],
+            'exponentiation_expression': ['numerical-valued_operated_item', '**', 'numerical-valued_operated_item'],
+            'comparison_expression': ['mutually_exclusive'],
+            'greater_than_expression': ['numerical-valued_operated_item', '>', 'numerical-valued_operated_item'],
+            'less_than_expression': ['numerical-valued_operated_item', '<', 'numerical-valued_operated_item'],
+            'greater_than_or_equal_to_expression': ['numerical-valued_operated_item', '>=', 'numerical-valued_operated_item'],
+            'less_than_or_equal_to_expression': ['numerical-valued_operated_item', '<=', 'numerical-valued_operated_item'],
+            'equal_to_expression': ['numerical-valued_operated_item', '==', 'numerical-valued_operated_item'],
+            'not_equal_to_expression': ['numerical-valued_operated_item', '!=', 'numerical-valued_operated_item'],
+            'logical_expression': ['mutually_exclusive'],
+            'and_expression': ['truth-valued_operated_item', '&&', 'truth-valued_operated_item'],
+            'or_expression': ['truth-valued_operated_item', '||', 'truth-valued_operated_item'],
+            'bitwise_expression': ['mutually_exclusive'],
+            'bitwise_and_expression': ['numerical-valued_operated_item', '&', 'numerical-valued_operated_item'],
+            'bitwise_or_expression': ['numerical-valued_operated_item', '|', 'numerical-valued_operated_item'],
+            'bitwise_xor_expression': ['numerical-valued_operated_item', '^', 'numerical-valued_operated_item'],
+            'left_shift_expression': ['numerical-valued_operated_item', '<<', 'numerical-valued_operated_item'],
+            'right_shift_expression': ['numerical-valued_operated_item', '>>', 'numerical-valued_operated_item'],
+            'unsigned_right_shift_expression': ['numerical-valued_operated_item', '>>>', 'numerical-valued_operated_item'],
+            'ternary_expression': ['truth-valued_operated_item', '?', 'assigned_operated_item', ':', 'assigned_operated_item'],
+            'bracketed_expression': ['(', 'expression', ')'],
+            'comma_expression': ['expression', ',', 'expression'],
+            'numerical-valued_operated_item': ['mutually_exclusive'], #As a flag, the numerical value of the node will be considered during semantic analysis.
+            'truth-valued_operated_item': ['mutually_exclusive'], #As a flag, the truth value of the node will be considered during semantic analysis.
+            'assigned_operated_item': ['mutually_exclusive'], #As a flag, the own value of the node will be considered during semantic analysis.
+            'variable_declaration_statement': ['variable_declaration', ';'],
+            'variable_operation_statement': ['variable_operation', ';'],
+            'variable_declaration': ['mutually_exclusive'],
+            'global_variable_declaration': ['var', 'variable_operation'],
+            'local_variable_declaration': ['let', 'variable_operation'],
+            'constant_declaration': ['const', 'variable_operation'],
+            'variable_operation': ['identifier', 'assignment_structure'],
+            'assignment_structure': ['mutually_exclusive'],
+            'basic_assignment_structure': ['=', 'expression'],
+            'extended_assignment_structure': ['mutually_exclusive'],
+            'addition_assignment_structure': ['+=', 'expression'],
+            'subtraction_assignment_structure': ['-=', 'expression'],
+            'multiplication_assignment_structure': ['*=', 'expression'],
+            'division_assignment_structure': ['/', 'expression'],
+            'modulus_assignment_structure': ['%=', 'expression'],
+            'exponentiation_assignment_structure': ['**=', 'expression'],
+            'and_assignment_structure': ['&&=', 'expression'],
+            'or_assignment_structure': ['||=', 'expression'],
+            'null_coalescing_assignment_structure': ['??=', 'expression'],
+            'if_statement': ['if', '(', 'expression', ')', 'statement_body', 'if_statement_optional_tail'],
+            'if_statement_optional_tail': ['mutually_exclusive'],
+            'else_if_statement': ['else', 'if', '(', 'expression', ')', 'statement_body', 'else_if_statement_optional_tail'],
+            'else_if_statement_optional_tail': ['mutually_exclusive'],
+            'else_statement': ['else', 'statement_body'],
+            'statement_body': ['{', 'statement_list', '}'],
+            'switch_statement': ['switch', '(', 'expression', ')', '{', 'case_list', '}'],
+            'case_list': ['mutually_exclusive'],
+            'case_statement': ['case', 'expression', ':', 'statement_list', 'optional_case_list_tail'],
+            'optional_case_list_tail': ['mutually_exclusive'],
+            'default_statement': ['default', ':', 'statement_list'],
+            'for_statement': ['for', '(', 'expression', ';', 'expression', ';', 'expression', ')', 'statement_body'],
+            'while_statement': ['while', '(', 'expression', ')', 'statement_body'],
+            'do_while_statement': ['do', 'statement_body', 'while', '(', 'expression', ')', ';'],
+            'function_declaration_statement': ['function', 'identifier', '(', 'formal_parameter_list', ')', 'statement_body'],
+            'formal_parameter_list': ['formal_parameter', 'optional_formal_parameter_list_tail'],
+            'formal_parameter': ['identifier', 'optional_formal_parameter_tail'],
+            'optional_formal_parameter_tail': ['mutually_exclusive'],
+            'optional_formal_parameter_list_tail': ['mutually_exclusive'],
+            'next_formal_parameter': [',', 'formal_parameter_list'],
+            'function_body': ['(', 'formal_parameter_list', ')', '=>', '{', 'statement_list', '}'],
+            'function_call_statement': ['function_call', ';'],
+            'function_call': ['identifier', '(', 'actual_parameter_list', ')'],
+            'actual_parameter_list': ['expression', 'optional_actual_parameter_list_tail'],
+            'optional_actual_parameter_list_tail': ['mutually_exclusive'],
+            'next_actual_parameter': [',', 'actual_parameter_list'],
+            'return_statement': ['return', 'expression', ';'],
+            'break_statement': ['break', ';'],
+            'continue_statement': ['continue', ';'],
+            'for_in_statement': ['for', '(', 'identifier', 'in', 'object_like_item', ')', 'statement_body'],
+            'object_like_item': ['mutually_exclusive'],
+            'object': ['{', 'object_item_list', '}'],
+            'object_item_list': ['object_item', 'optional_object_item_list_tail'],
+            'optional_object_item_list_tail': ['mutually_exclusive'],
+            'next_object_item': [',', 'object_item_list'],
+            'object_item': ['stringifiable_item', ':', 'assigned_operated_item'],
+            'stringifiable_item': ['mutually_exclusive'], #As a flag, the stringifiable value of the node will be considered during semantic analysis.
+            'array': ['[', 'array_item_list', ']'],
+            'array_item_list': ['array_item', 'optional_array_item_list_tail'],
+            'optional_array_item_list_tail': ['mutually_exclusive'],
+            'next_array_item': [',', 'array_item_list'],
+            'array_item': ['assigned_operated_item'],
+            'for_of_statement': ['for', '(', 'identifier', 'of', 'iterable_item', ')', 'statement_body'],
+            'iterable_item': ['mutually_exclusive'],
+        }
+        self.mutually_exclusive = {
+            'statement': ['expression_statement', 'variable_declaration_statement', 'variable_operation_statement', 'if_statement', 'else_if_statement', 'else_statement', 'switch_statement', 'case_statement', 'defalut_statement', 'for_statement', 'while_statement', 'do_while_statement', 'function_declaration_statement', 'function_call_statement', 'return_statement', 'break_statement', 'continue_statement', 'for_in_statement', 'for_of_statement'],
+            'expression': ['assigned_operated_item', 'prefix_expression', 'postfix_expression', 'binary_expression', 'ternary_expression', 'bracketed_expression', 'comma_expression'],
+            'prefix_expression': ['increment_prefix_expression', 'decrement_prefix_expression', 'not_expression', 'negative_expression', 'bitwise_not_expression'],
+            'postfix_expression': ['increment_postfix_expression', 'decrement_postfix_expression'],
+            'binary_expression': ['arithmetic_expression', 'comparison_expression', 'logical_expression', 'bitwise_expression'],
+            'arithmetic_expression': ['addition_expression', 'subtraction_expression', 'multiplication_expression', 'division_expression', 'modulus_expression', 'exponentiation_expression'],
+            'comparison_expression': ['greater_than_expression', 'less_than_expression', 'greater_than_or_equal_to_expression', 'less_than_or_equal_to_expression', 'equal_to_expression', 'not_equal_to_expression'],
+            'logical_expression': ['and_expression', 'or_expression'],
+            'bitwite_expression': ['bitwise_and_expression', 'bitwise_or_expression', 'bitwise_xor_expression', 'left_shift_expression', 'right_shift_expression', 'unsigned_right_shift_expression'],
+            'numerical-valued_operated_item': ['Number', 'identifier', 'expression'],
+            'truth-valued_operated_item': ['Boolean', 'Number', 'String', 'Null', 'Undefined', 'NaN', 'identifier', 'expression'],
+            'assigned_operated_item': ['String', 'Number', 'Boolean', 'Null', 'NaN', 'Undefined', 'object', 'array', 'function_body', 'function_call', 'identifier', 'expression'],
+            'variable_declaration': ['global_variable_declaration', 'local_variable_declaration', 'constant_declaration'],
+            'optional_variable_operation_tail': ['epsilon', 'next_variable_operation'],
+            'assignment_structure': ['basic_assignment_structure', 'extended_assignment_structure', 'and_assignment_structure', 'or_assignment_structure', 'null_coalescing_assignment_structure'],
+            'extended_assignment_structure': ['addition_assignment_structure', 'subtraction_assignment_structure', 'multiplication_assignment_structure', 'division_assignment_structure', 'modulus_assignment_structure', 'exponentiation_assignment_structure'],
+            'if_statement_optional_tail': ['epsilon', 'else_if_statement', 'else_statement'],
+            'else_if_statement_optional_tail': ['epsilon', 'else_if_statement', 'else_statement'],
+            'case_list': ['case_statement', 'default_statement'],
+            'optional_case_list_tail': ['epsilon', 'case_list'],
+            'optional_formal_parameter_tail': ['epsilon', 'basic_assignment_structure'],
+            'optional_formal_parameter_list': ['epsilon', 'next_formal_parameter'],
+            'optional_actual_parameter_list_tail': ['epsilon', 'next_actual_parameter'],
+            'object_like_item': ['object', 'array', 'function_body', 'function_call', 'identifier', 'expression'],
+            'object_item_list': ['epsilon', 'next_object_item'],
+            'stringifiable_item': ['String', 'Number', 'Boolean', 'Null', 'NaN', 'Undefined', 'object', 'array', 'function_body', 'function_call', 'identifier', 'expression'],
+            'optional_object_item_list_tail': ['epsilon', 'next_object_item'],
+            'array_item_list': ['epsilon', 'next_array_item'],
+            'array_item': ['assigned_operated_item'],
+            'iterable_item': ['array', 'String', 'function_call', 'identifier', 'expression'],
+            'optional_array_item_list_tail': ['epsilon', 'next_array_item'],
+            'optional_formal_parameter_list_tail': ['epsilon', 'next_formal_parameter'],
+        }
+        self.first_set: Dict[str: set[str]] = {}
+        self.follow_set: Dict[str: set[str]] = {}
+        self.parse_table: Dict[Tuple[str, str], List[str]] = {}
+        self._get_first_set()
+        self._get_follow_set()
+        self._get_parse_table()
+    def parse(self, token_list: List[Token]) -> ASTNode:
+        stack = ['program']
+        root = ASTNode('program', 'program')
+        node_stack = [root]
+        i = 0
+        while stack:
+            top = stack.pop()
+            current_node = node_stack.pop()
+            current_token = token_list[i] if i < len(token_list) else Token('$', '$')
+            if top not in self.grammar_production and top == current_token.type:
+                current_node.value = current_token.value
+                i += 1
+                continue
+            elif top in self.grammar_production and (top, current_token.type) in self.parse_table:
+                production = self.parse_table[(top, current_token.type)]
+                print((top, current_token), production)
+                for symbol in reversed(production) if isinstance(production, list) else [production]:
+                    stack.append(symbol)
+                    new_node = ASTNode(symbol, None)
+                    current_node.add_child(new_node)
+                    node_stack.append(new_node)
             else:
-                processor.function_scope[value].append(key)
-        return self.next()
-
-class CodeCallFunctionMatchValidator(CodeValidator):
-    def update(self, processor, message):
-        super().update(processor, message)
-        print(f"Code Call Function Match Validator Received Update: {message}")
-        for line in [line for line in processor.body if line.type == "call"]:
-            for function_index, scope in processor.function_scope.items():
-                if line.index in scope:
-                    for local_line_index in [local_line_index for local_line_index in scope if processor.body[local_line_index].type == "function"]:
-                        if processor.body[local_line_index].function_name == line.function_name:
-                            processor.call_function_match[line.index] = local_line_index
-                    if line.index not in processor.call_function_match and processor.body[function_index].function_name == line.function_name:
-                        processor.call_function_match[line.index] = function_index
-            if line.index not in processor.call_function_match:
-                for function_index in [function_index for function_index in processor.function_scope.key() if all(function_index not in [other_scope for other_function_index, other_scope in processor.function_scope.items() if function_index != other_function_index])]:
-                    if processor.body[function_index].function_name == line.function_name:
-                        processor.call_function_match[line.index] = function_index
-        return self.next()
-
-class CodeNamingCheckValidator(CodeValidator):
-    def update(self, processor, message):
-        super().update(processor, message)
-        print(f"Code Naming Check Validator Received Update: {message}")
-        pat = r"^[A-Za-z_][A-Za-z0-9_]*$"
-        for line in processor.body:
-            if line.type in {"define", "operate", "scan"}:
-                if line.variable is None:
-                    return "stop", f"Error: Variables should be named\nLine: {line.index}"
-                elif re.match(pat,line.variable) is None:
-                    return "stop",f"Error: Illegal naming\nLine: {line.index}"
-            elif line.type == "function":
-                if line.function_name is None:
-                    return "stop", f"Error: Function should be named\nLine: {line.index}"
-                elif re.match(pat, line.function_name) is None:
-                    return "stop",f"Error: Illegal naming\nLine: {line.index}"
-                for argument in line.format_arguments:
-                    if re.match(pat, argument["name"]) is None:
-                        return "stop",f"Error: Illegal naming\nLine: {line.index}"
-            elif line.type == "call":
-                if re.match(pat, line.function_name) is None:
-                    return "stop",f"Error: Illegal naming\nLine: {line.index}"
-                if line.variable is None:
-                    pass
-                elif re.match(pat,line.variable) is None:
-                    return "stop",f"Error: Illegal naming\nLine: {line.index}"
-        return self.next()
-
-class CodeValueCheckValidator(CodeValidator):
-    def update(self, processor, message):
-        super().update(processor, message)
-        print(f"Code Value Check Validator Received Update: {message}")
-        for line in processor.body:
-            if line.type in {"define", "print"}:
-                if processor.body[processor.in_block_keywords[line.index]].show_variable(line.value):
-                    line.value = processor.body[processor.in_block_keywords[line.index]].get_variable(line.value)
-            elif line.type == "operate":
-                for i, value in enumerate(line.values):
-                    if processor.body[processor.in_block_keywords[line.index]].show_variable(value):
-                        line.values[i] = processor.body[processor.in_block_keywords[line.index]].get_variable(value)
-            elif line.type == "call":
-                for i, argument in enumerate(line.actual_arguments):
-                    if processor.body[processor.in_block_keywords[line.index]].show_variable(argument):
-                        line.actual_arguments[i] = processor.body[processor.in_block_keywords[line.index]].get_variable(argument)
-        return self.next()
-
-class CodeTypeCheckValidator(CodeValidator):
-    def update(self, processor, message):
-        super().update(processor, message)
-        print(f"Code Type Check Validator Received Update: {message}")
-        for line in processor.body:
-            if line.type in {"define", "operate"}:
-                if line.variable_type is None:
-                    return "stop", f"Error: Variables have no type\nLine: {line.index}"
-                elif line.type == "define" and not isinstance(line.value, line.variable_type):
-                    return "stop", f"Error: Variable type mismatch\nLine: {line.index}"
-                elif line.type == "operate" and not isinstance(line.operate(*line.values), line.variable_type):
-                    return "stop", f"Error: Variable type mismatch\nLine: {line.index}"
-            elif line.type == "call":
-                format_arguments = processor.body[processor.call_function_match[line.index]].give_format_arguments_data()
-                if len(line.actual_arguments) < len(format_arguments):
-                    return "stop", f"Error: Missing required arguments\nLine: {line.index}"
-                elif len(line.actual_arguments) > len(format_arguments):
-                    return "stop", f"Error: Passing in extra arguments\nLine: {line.index}"
-                for i, argument in enumerate(format_arguments):
-                    if not isinstance(line.actual_arguments[i], argument["type"]):
-                        return "stop", f"Error: Argument type mismatch\nLine: {line.index}"
-                if (line.variable is None and line.variable_type is not None) or (line.variable is not None and line.variable is None):
-                    return "stop", f"Error: Unclear attitude\nLine: {line.index}"
-                elif line.variable is not None and line.variable_type is not None and not isinstance(line.return_value, line.variable_type):
-                    return "stop", f"Error: Return value type mismatch\nLine: {line.index}"
-            elif line.type == "return":
-                return_value_type = processor.body[processor.in_block_keywords[line.index]].give_return_value_type()
-                if not isinstance(line.return_value, return_value_type):
-                    return "stop", f"Error: Return value type mismatch\nLine: {line.index}"
-        return self.next()
-
-class CodeEndValidator(CodeValidator):
-    def update(self, processor, message):
-        super().update(processor, message)
-        print(f"Code End Validator Received Update: {message}")
-        return self.next()
-
-class CodeOptimizer(ABC):
-    @abstractmethod
-    def update(self, processor, message):
-        self.processor = processor
-        self.message = message
-
-class CodeUnusedOptimizer(CodeOptimizer):
-    def update(self, processor, message):
-        print(f"Code Unused Optimizer Received Update: {message}")
-        for function_index, end_index in {index:end_index for index, end_index in processor.closed_block_match.items() if processor.body[index].type == "function"}.items():
-            if function_index not in [function_index for function_index in processor.function_scope.key() if all(function_index not in [other_scope for other_function_index, other_scope in processor.function_scope.items() if function_index != other_function_index])]:
-                if all(processor.body[function_index].function_name != processor.body[call_index].function_name and call_index for call_index in [in_scope_line_index for in_scope_line_index in [scope for scope in processor.function_scope.values() if function_index in scope][0] if processor.body[in_scope_line_index].type == "call"]):
-                    for i in range(function_index, end_index + 1):
-                        processor.invalid[i] = True
-            else:
-                if all(call_line.function_name != processor.body[function_index].index and call_line for call_line in processor.body if all(call_line not in [scope for scope in processor.function_scope.values()]) and call_line.type == "call"):
-                    for i in range(function_index, end_index + 1):
-                        processor.invalid[i] = True
-
-class CodeRepeatDefinedOptimizer(CodeOptimizer):
-    def update(self, processor, message):
-        print(f"Code Repeat Defined Optimizer Received Update: {message}")
-        for function_index, end_index in {index:end_index for index, end_index in processor.closed_block_match.items() if processor.body[index].type == "function"}.items():
-            if function_index not in [function_index for function_index in processor.function_scope.key() if all(function_index not in [other_scope for other_function_index, other_scope in processor.function_scope.items() if function_index != other_function_index])]:
-                for in_scope_function_index in [in_scope_line_index for in_scope_line_index in [scope for scope in processor.function_scope.values() if function_index in scope][0] if processor.body[in_scope_line_index].type == "function"]:
-                    if processor.body[in_scope_function_index].function_name == processor.body[function_index] and in_scope_function_index != function_index:
-                        for i in range(function_index, end_index + 1):
-                            processor.invalid[i] = True
-                        break
-            else:
-                for in_global_function_index in [function_index for function_index in processor.function_scope.key() if all(function_index not in [other_scope for other_function_index, other_scope in processor.function_scope.items() if function_index != other_function_index])]:
-                    if processor.body[in_global_function_index].function_name == processor.body[function_index] and in_global_function_index != function_index:
-                        for i in range(function_index, end_index + 1):
-                            processor.invalid[i] = True
-                        break
-
-class CodeUnreachableOptimizer(CodeOptimizer):
-    def update(self, processor, message):
-        print(f"Code Unreachable Optimizer Received Update: {message}")
-        for line_index, block_index in processor.in_block_keywords.items():
-            current_block_end_index = processor.closed_block_match[block_index]
-            for internal_block_index in [internal_block_index for internal_block_index in processor.closed_block_match if block_index <= internal_block_index < processor.closed_block_match[block_index]]:
-                if internal_block_index < line_index and processor.closed_block_match[internal_block_index] > line_index:
-                    current_block_end_index = processor.closed_block_match[internal_block_index]
-                elif internal_block_index > line_index:
-                    break
-            for i in range(line_index + 1, current_block_end_index):
-                processor.invalid[i] = True
-
-class CodeOrganizer:
-    def update(self, processor, message):
-        print(f"Code Organizer Received Update: {message}")
-        old_new_match = {}
-        processor.body.chear()
-        for new_i, line in enumerate([line for old_i, line in enumerate(processor.body) if not processor.invalid[old_i]]):
-            old_new_match[line.index] = new_i
-            line.mkindex(new_i)
-            processor.append(line)
-        processor.closed_block_match = {old_new_match[key]:old_new_match[value] for key, value in processor.closed_block_match.items()}
-        processor.reverse_closed_block_match = {old_new_match[key]:old_new_match[value] for key, value in processor.reverse_closed_block_match.items()}
-        processor.in_block_keywords = {old_new_match[key]:old_new_match[value] for key, value in processor.in_block_keywords.items()}
-        processor.function_scope = {old_new_match[key]:old_new_match[value] for key, value in processor.function_scope.items()}
-        processor.call_function_match = {old_new_match[key]:old_new_match[value] for key, value in processor.call_function_match.items()}
-        processor.call_stack = [old_new_match[value] for value in processor.call_function_match]
-        self.next()
-
-class CodeExecutor:
-    def execute(self, processor):
-        ptr = 0
-        while ptr < processor.index:
-            line = processor.body[ptr]
-            if line.type == "define":
-                processor.body[processor.in_block_keywords[line.index]].define_variable(line.variable, line.value)
-            elif line.type == "operate":
-                processor.body[processor.in_block_keywords[line.index]].define_variable(line.variable, line.operate(*line.values))
-            elif line.type in {"if", "elif"} and not line.condition():
-                ptr = processor.closed_block_match[line.index]
-            elif line.type == "case" and line.variable == line.value:
-                ptr = processor.closed_block_match[line.index]
-            elif line.type == "for":
-                if line.condition(line.initial):
-                    line.temp_store(processor)
-                    line.initial = line.operate(*line.initial)
-                    continue
-                line.recover_initial(processor)
-                processor.body[processor.closed_block_match[line.index]].set_loop_else()
-                ptr = processor.closed_block_match[line.index]
-            elif line.type == "while" and not line.condition():
-                processor.body[processor.closed_block_match[line.index]].set_loop_else()
-                ptr =  processor.closed_block_match[line.index]
-            elif line.type == "loop-end" and line.loop_else:
-                ptr = processor.reverse_closed_block_match[line.index]
-            elif line.type == "continue":
-                ptr = processor.in_block_keywords[line.index]
-            elif line.type == "break":
-                ptr = processor.closed_block_match[processor.in_block_keywords[line.index]]
-            elif line.type == "call":
-                if line._has_return:
-                    processor.call_stack.pop()
-                    format_arguments = processor.body[processor.call_function_match[line.index]].give_format_arguments_data()
-                    for argument in format_arguments:
-                        processor.body[processor.call_function_match[line.index]].remove_variable(argument)
-                    if line.variable is not None:
-                        processor.body[processor.in_block_keywords[line.index]].define_variable(line.variable, line._return_value)
-                    continue
-                processor.call_stack.append(line.index)
-                format_arguments = processor.body[processor.call_function_match[line.index]].give_format_arguments_data()
-                for i, argument in enumerate(format_arguments):
-                    processor.body[processor.call_function_match[line.index]].define_variable(argument["name"],line.actual_arguments[i])
-                ptr = processor.call_function_match[line.index]
-            elif line.type == "return":
-                processor.body[processor.call_stack[-1]].get_return_value(line.value)
-                processor.body[processor.call_stack[-1]].set_has_return()
-                ptr = processor.call_stack[-1]
-            elif line.type == "function-end":
-                processor.body[processor.call_stack[-1]].set_has_return()
-                ptr = processor.call_stack[-1]
-            elif line.type == "throw":
-                processor.body[processor.closed_block_match[line.index]].set_exception(f"Exception: {line.exception}\nLine: {line.index}")
-                ptr = processor.closed_block_match[processor.in_block_keywords[line.index]]
-            elif line.type == "catch":
-                if line.exception is not None:
-                    print(line.exception)
-                    continue
-                ptr = processor.closed_block_match[line.index]
-            elif line.type == "print":
-                print(f"Output: {line.value}")
-            elif line.type == "scan":
-                processor.body[processor.in_block_keywords[line.index]].define_variable(line.variable, input(f"Enter: Assign the value to {line.variable}"))
+                raise ValueError(f"Unexpected token: {current_token}")
+        if i != len(token_list):
+            raise ValueError(f"Unexpected token: {token_list[i]}")
+        return root     
+    def _get_first_set(self) -> None:
+        have_change, is_same = False, False
+        while not have_change or not is_same:
+            for symbol in self.grammar_production:
+                first_symbol = self.grammar_production[symbol][0]
+                if first_symbol == 'mutually_exclusive':
+                    for option in self.mutually_exclusive[symbol]:
+                        if option not in self.first_set:
+                            self.first_set[option] = set()
+                        if option not in self.grammar_production:
+                            self.first_set[option] |= {option}
+                        if symbol not in self.first_set:
+                            self.first_set[symbol] = set()
+                        else:
+                            self.first_set[symbol] |= self.first_set[option]
+                else:
+                    if first_symbol not in self.first_set:
+                        self.first_set[first_symbol] = set()
+                    if first_symbol not in self.grammar_production:
+                        self.first_set[first_symbol] |= {first_symbol}
+                    if symbol not in self.first_set:
+                        self.first_set[symbol] = set()
+                    else:
+                        self.first_set[symbol] |= self.first_set[first_symbol]
+            if not have_change:
+                copy_first_set = {k: v.copy() for k, v in self.first_set.items()}
+                have_change = True
+                continue
+            is_same = all(k in copy_first_set and v == copy_first_set[k] for k, v in self.first_set.items())
+            if not is_same:
+                copy_first_set = {k: v.copy() for k, v in self.first_set.items()}
+    def _get_follow_set(self) -> None:
+        have_change, is_same = False, False
+        while not have_change or not is_same:
+            for symbol in self.grammar_production:
+                if symbol == 'program':
+                    self.follow_set[symbol] = {'$'}
+                for non_terminal, production in {k: v for k, v in self.grammar_production.items() if symbol in v}.items():
+                    for i in [i for i in range(len(production) - 1) if production[i] == symbol]:
+                        if production[i + 1] not in self.first_set:
+                            self.first_set[production[i + 1]] = set()
+                        if production[i + 1] not in self.grammar_production:
+                            self.first_set[production[i + 1]] |= {production[i + 1]}
+                        if symbol not in self.follow_set:
+                            self.follow_set[symbol] = set()
+                        self.follow_set[symbol] |= self.first_set[production[i + 1]] - {'epsilon'}
+                        if non_terminal not in self.follow_set:
+                            self.follow_set[non_terminal] = set()
+                        if 'epsilon' in self.first_set[production[i + 1]] or symbol == production[-1]:
+                            self.follow_set[symbol] |= self.follow_set[non_terminal]
+                for non_terminal in {k for k, v in self.mutually_exclusive.items() if symbol in v}:
+                    if non_terminal not in self.follow_set:
+                        self.follow_set[non_terminal] = set()
+                    if symbol not in self.follow_set:
+                        self.follow_set[symbol] = self.follow_set[non_terminal]
+                    else:
+                        self.follow_set[symbol] |= self.follow_set[non_terminal]
+            if not have_change:
+                copy_follow_set = {k: v.copy() for k, v in self.follow_set.items()}
+                have_change = True
+                continue
+            is_same = all(k in copy_follow_set and v == copy_follow_set[k] for k, v in self.follow_set.items())
+            if not is_same:
+                copy_follow_set = {k: v.copy() for k, v in self.follow_set.items()}
+    def _get_parse_table(self) -> Dict[Tuple[str, str], List[str]]:
+        for A, alpha in {k: v for k, v in self.grammar_production.items() if v[0] != 'mutually_exclusive'}.items():
+            for a in self.first_set[alpha[0]]:
+                self.parse_table[(A, a)] = alpha
+            if 'epsilon' in self.first_set[alpha[0]]:
+                for b in self.follow_set[A]:
+                    self.parse_table[(A, b)] = alpha
+            if A == 'program':
+                for a in {'$'}:
+                    self.parse_table[(A, a)] = alpha
+        for A, symbols in self.mutually_exclusive.items():
+            for symbol in symbols:
+                for a in self.first_set[symbol]:
+                    self.parse_table[(A, a)] = symbol
+                if 'epsilon' in self.first_set[symbol]:
+                    for b in self.follow_set[A]:
+                        self.parse_table[(A, b)] = symbol
